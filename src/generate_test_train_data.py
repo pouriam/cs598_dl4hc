@@ -33,13 +33,16 @@ def get_dicom_embeddings(dicom_dir):
     for (dirpath, dirnames, filenames) in os.walk(dicom_dir):
         for filename in filenames:
             if filename.lower().endswith('.dcm'):
-                dcm_path = os.path.join(dirpath, filename)
+                try:
+                    dcm_path = os.path.join(dirpath, filename)
 
-                img_preprocessed = load_dicom_image(dcm_path)
+                    img_preprocessed = load_dicom_image(dcm_path)
 
-                # Generate embedding
-                embedding = densenet_model.predict(img_preprocessed, verbose=0)
-                embeddings[filename.replace(".dcm", "")] = embedding.flatten()
+                    # Generate embedding
+                    embedding = densenet_model.predict(img_preprocessed, verbose=0)
+                    embeddings[filename.replace(".dcm", "")] = embedding.flatten()
+                except Exception as e:
+                    print(e, filename)
 
     return embeddings
 
@@ -50,12 +53,15 @@ def extract_view_positions():
     for (dirpath, dirnames, filenames) in os.walk(dicom_directory):
         for filename in filenames:
             if filename.lower().endswith('.dcm'):
-                dcm_path = os.path.join(dirpath, filename)
-                dcm_data = pydicom.dcmread(dcm_path, stop_before_pixels=True)
+                try:
+                    dcm_path = os.path.join(dirpath, filename)
+                    dcm_data = pydicom.dcmread(dcm_path, stop_before_pixels=True)
 
-                # Check if ViewPosition metadata is present
-                view_position = getattr(dcm_data, 'ViewPosition', 'Unknown')
-                view_positions[filename.replace(".dcm", "")] = view_position
+                    # Check if ViewPosition metadata is present
+                    view_position = getattr(dcm_data, 'ViewPosition', 'Unknown')
+                    view_positions[filename.replace(".dcm", "")] = view_position
+                except Exception as e:
+                    print(e, filename)
 
     return view_positions
 

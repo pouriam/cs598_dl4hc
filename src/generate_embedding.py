@@ -33,10 +33,13 @@ def create_embedding(dicom_folder):
     for (dirpath, dirnames, filenames) in os.walk(dicom_folder):
         for filename in filenames:
             if filename.lower().endswith('.dcm'):
-                img_path = os.path.join(dirpath, filename)
-                img = load_dicom_image(img_path)
-                embedding = base_model.predict(img)
-                embedding_list.append(embedding.squeeze())
+                try:
+                    img_path = os.path.join(dirpath, filename)
+                    img = load_dicom_image(img_path)
+                    embedding = base_model.predict(img)
+                    embedding_list.append(embedding.squeeze())
+                except Exception as e:
+                    print(e, filename)
 
     return np.array(embedding_list)
 
