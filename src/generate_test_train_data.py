@@ -113,8 +113,8 @@ def create_data_frame():
 
 
 if __name__ == "__main__":
-    densenet_vecs = get_dicom_embeddings(dicom_directory)
     df = create_data_frame()
+    densenet_vecs = get_dicom_embeddings(dicom_directory)
     df = df[df.dicom_id.isin(densenet_vecs.keys())]
     view_positions = extract_view_positions()
 
