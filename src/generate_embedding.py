@@ -28,7 +28,7 @@ def load_dicom_image(dcm_path):
 
 
 def create_embedding(dicom_folder):
-    embedding_list = []
+    embedding_dict = dict()
 
     for (dirpath, dirnames, filenames) in os.walk(dicom_folder):
         for filename in filenames:
@@ -37,14 +37,13 @@ def create_embedding(dicom_folder):
                     img_path = os.path.join(dirpath, filename)
                     img = load_dicom_image(img_path)
                     embedding = base_model.predict(img)
-                    embedding_list.append(embedding.squeeze())
+                    embedding_dict[filename.lower().replace(".dcm", "")] = embedding.squeeze()
                 except Exception as e:
                     print(e, filename)
 
-    return np.array(embedding_list)
+    return embedding_dict
 
 
 if __name__ == "__main__":
     embeddings = create_embedding("C:/data/physionet/physionet.org/files/mimic-cxr/2.1.0")
-    print("Embedding shape:", embeddings.shape)
-    np.save("embeddings.npy", embeddings)
+    np.save("../data/embeddings.npy", embeddings)
