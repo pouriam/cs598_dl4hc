@@ -3,7 +3,7 @@ import re
 import itertools
 from collections import defaultdict
 from tqdm import tqdm
-from constants import *
+from src.constants import *
 
 import bioc
 
