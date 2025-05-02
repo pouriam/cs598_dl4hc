@@ -1,8 +1,15 @@
 """Define report loader class."""
+import sys
+import os
+
+# Add the local repo path to Python's search path
+sys.path.append(os.path.abspath("negbio"))
 import warnings
 import re
 import bioc
 import pandas as pd
+import sys
+import os
 from negbio.pipeline import text2bioc, ssplit, section_split
 
 from constants import *
