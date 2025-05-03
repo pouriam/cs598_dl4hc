@@ -6,7 +6,6 @@ import tensorflow as tf
 import pydicom
 import cv2
 from tensorflow.keras.applications.densenet import preprocess_input
-from tensorflow.keras.layers import Input, Dense, LSTM, Embedding, Add
 
 
 model_path = "../data/cnn_rnn_model.h5"
@@ -17,22 +16,10 @@ model = tf.keras.models.load_model(model_path, compile=False)
 with open(tokenizer_path, 'rb') as f:
     tokenizer = pickle.load(f)
 
-# === Load test metadata ===
 test_df = pd.read_csv('../data/test.tsv', sep='\t')
 
-base_cnn = tf.keras.applications.DenseNet121(weights='imagenet', include_top=False, pooling='avg')
+base_cnn = model.get_layer("densenet121")
 base_cnn.trainable = False  # Freeze the encoder
-
-
-# def preprocess_image(dcm_path):
-#     dcm = pydicom.dcmread(dcm_path)
-#     img = dcm.pixel_array.astype(np.float32)
-#     img = (img - np.min(img)) / (np.max(img) - np.min(img)) * 255.0
-#     img = img.astype(np.uint8)
-#     img_rgb = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
-#     img_resized = cv2.resize(img_rgb, (224, 224))
-#     img_preprocessed = preprocess_input(np.expand_dims(img_resized, axis=0))
-#     return img_preprocessed
 
 
 def load_dicom_image(dcm_path):
@@ -53,24 +40,34 @@ def beam_search_decoder(model, image, tokenizer, beam_width=4, max_len=30):
 
     sequences = [[ [start_token], 0.0 ]]
 
-    cnn_feature = base_cnn.predict(np.expand_dims(image, axis=0))
-    cnn_feature = tf.keras.layers.Dense(256, activation='relu')(cnn_feature)
+    cnn_feature = base_cnn.predict(np.expand_dims(image, axis=0))  # Shape: (1, 1024)
+    cnn_feature = model.get_layer("dense")(cnn_feature)  # Layer index 2: projects to 256D
+    cnn_feature_repeated = model.get_layer("repeat_vector")(cnn_feature)  # Shape: (1, 30, 256)
 
     for _ in range(max_len):
         all_candidates = []
         for seq, score in sequences:
             padded_seq = tf.keras.preprocessing.sequence.pad_sequences([seq], maxlen=max_seq_length)
             x_text = tf.convert_to_tensor(padded_seq)
-            embedded_text = model.get_layer(index=4)(x_text) # shape: (1, max_seq_length, 256)
+            embedded_text = model.get_layer(index=5)(x_text) # shape: (1, max_seq_length, 256)
+
+            current_seq_length = len(seq)
+            sliced_cnn = cnn_feature_repeated[:, :current_seq_length, :]  # Shape: (1, current_seq_length, 256)
+            if current_seq_length == 1:
+                # For the first step, use a zero tensor
+                sliced_embedded = tf.zeros_like(sliced_cnn)
+            else:
+                sliced_embedded = embedded_text[:, :current_seq_length, :]   # Shape: (1, current_seq_length, 256)
+
+            sliced_cnn = tf.convert_to_tensor(sliced_cnn)
+            sliced_embedded = tf.convert_to_tensor(sliced_embedded)
 
             # Expand CNN feature for concat
-            img_embed = tf.expand_dims(cnn_feature, 1)
-            x_combined = tf.concat([img_embed, embedded_text[:, :-1, :]], axis=1)
-            # repeated_feature = tf.repeat(cnn_feature[:, np.newaxis, :], max_seq_length, axis=1)
-            # x_combined = tf.concat([repeated_feature, embedded_text], axis=-1)
+            concat_layer = model.get_layer("concatenate")
+            x_combined = concat_layer([sliced_cnn, sliced_embedded])
 
-            lstm_out = model.get_layer(index=6)(x_combined)
-            preds = model.get_layer(index=7)(lstm_out).numpy()[0, len(seq)-1]  # get next-token probs
+            lstm_out = model.get_layer(index=7)(x_combined)
+            preds = model.get_layer(index=8)(lstm_out).numpy()[0]  # Shape: (vocab_size,)
 
             top_tokens = preds.argsort()[-beam_width:][::-1]
             for token in top_tokens:
@@ -88,7 +85,7 @@ def beam_search_decoder(model, image, tokenizer, beam_width=4, max_len=30):
 
 
 cxr_dicom_dict = dict()
-with open("cxr-record-list.csv", encoding="utf-8") as cxr_record_file:
+with open("C:/data/physionet/physionet.org/files/mimic-cxr/2.1.0/cxr-record-list.csv", encoding="utf-8") as cxr_record_file:
     lines = cxr_record_file.readlines()
     for line in lines:
         items = line.strip().split(",")
@@ -96,12 +93,14 @@ with open("cxr-record-list.csv", encoding="utf-8") as cxr_record_file:
 
 generated_reports = {}
 skipped = 0
+
 for dicom_id in tqdm.tqdm(test_df.dicom_id):
     try:
         img = load_dicom_image(cxr_dicom_dict[dicom_id])
         report = beam_search_decoder(model, img, tokenizer, beam_width=4)
         generated_reports[dicom_id] = report
     except Exception as e:
+        # print(e)
         skipped += 1
 print(f"Total skipped files: {skipped}/{len(test_df)}")
 
