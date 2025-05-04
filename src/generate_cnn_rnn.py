@@ -67,7 +67,8 @@ if __name__ == "__main__":
     skipped = 0
     counted = 0
     for pred_dicom, ref_rad in tqdm.tqdm(zip(train_df.dicom_id, train_df.study_id)):
-        if counted >= 7000
+        if counted >= 7000:
+            break
         try:
             key = cxr_record_dict[(str(ref_rad), pred_dicom)]
             img = load_dicom_image("C:/data/physionet/physionet.org/files/mimic-cxr/2.1.0/" + cxr_dicom_dict[pred_dicom])
@@ -79,6 +80,7 @@ if __name__ == "__main__":
                     X1.append(i_feat)
                     X2.append(i_seq)
                     y.append(i_word)
+            counted += 1
         except Exception as e:
             skipped += 1
 
