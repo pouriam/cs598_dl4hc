@@ -18,7 +18,7 @@ pred_knn = {k: [v] for k, v in df_knn[['dicom_id', 'generated']].values}
 pred_ngram = {k: [v] for k, v in df_ngram[['dicom_id', 'generated']].values}
 pred_cnn = {k: [v] for k, v in df_cnn[['dicom_id', 'generated']].values}
 
-methods = {'knn': pred_knn, 'ngram': pred_ngram, 'nn': pred_cnn}
+methods = {'knn': pred_knn, 'ngram': pred_ngram, 'cnn-rnn': pred_cnn}
 
 for method, pred in methods.items():
     # Get just the predictions from this method
@@ -40,3 +40,5 @@ for method, pred in methods.items():
     cider_scorer = Cider(4)
     cider_score = cider_scorer.compute_score(ref, pred)
     print('Cider score: \t%-10s (n=%6d):' % (method, len(ids)), cider_score[0])
+
+

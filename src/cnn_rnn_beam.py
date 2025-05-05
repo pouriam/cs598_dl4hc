@@ -10,10 +10,16 @@ from tensorflow.keras.layers import Input, Dense, LSTM, Embedding, Concatenate, 
 from tensorflow.keras.applications.densenet import preprocess_input
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from report_parser import parse_report
+import gc
+import os
+
+gc.collect()
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 
 class BeamSearchDecoder:
-    def __init__(self, model, tokenizer, max_len=100, beam_width=4):
+    def __init__(self, model, tokenizer, max_len=50, beam_width=4):
         self.model = model
         self.tokenizer = tokenizer
         self.max_len = max_len
@@ -53,7 +59,7 @@ class BeamSearchDecoder:
 
 def load_dicom_image(dcm_path):
     dcm = pydicom.dcmread(dcm_path)
-    img = dcm.pixel_array.astype(np.float32)
+    img = dcm.pixel_array.astype(np.float16)
     img = (img - np.min(img)) / (np.max(img) - np.min(img) + 1e-6) * 255.0
     img = img.astype(np.uint8)
     img_rgb = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
@@ -89,25 +95,24 @@ def create_sequences(tokenizer, report, image_feature, max_len, teacher_forcing_
 
 if __name__ == "__main__":
     # Load data and tokenizer
-    with open('../data/tokenizer.pkl', 'rb') as f:
+    with open('tokenizer.pkl', 'rb') as f:
         tokenizer = pickle.load(f)
 
-    train_df = pd.read_csv('../data/train.tsv', sep='\t')
+    train_df = pd.read_csv('train.tsv', sep='\t')
     vocab_size = len(tokenizer.word_index) + 1
     max_len = 100
 
     # Load DICOM metadata
     cxr_record_dict = {}
     cxr_dicom_dict = {}
-    with open("C:/data/physionet/physionet.org/files/mimic-cxr/2.1.0/cxr-record-list.csv") as f:
+    with open("cxr-record-list.csv") as f:
         for line in f.readlines()[1:]:
             study_id, subject_id, dicom_id, path = line.strip().split(',')
             cxr_record_dict[(subject_id, dicom_id)] = (study_id, subject_id)
             cxr_dicom_dict[dicom_id] = path
 
     cxr_study_dict = dict()
-    with open("C:/data/physionet/physionet.org/files/mimic-cxr/2.1.0/cxr-study-list.csv",
-              encoding="utf-8") as cxr_record_file:
+    with open("cxr-study-list.csv", encoding="utf-8") as cxr_record_file:
         lines = cxr_record_file.readlines()
         for line in lines:
             items = line.strip().split(",")
@@ -147,12 +152,15 @@ if __name__ == "__main__":
     # Regenerate sequences with current sampling probability
     X1, X2, y = [], [], []
     skipped = 0
+    counted = 0
     for pred_dicom, ref_rad in tqdm.tqdm(zip(train_df.dicom_id, train_df.study_id)):
+        if counted > 200:
+            break
         try:
             key = cxr_record_dict[(str(ref_rad), pred_dicom)]
-            img_path = "C:/data/physionet/physionet.org/files/mimic-cxr/2.1.0/" + cxr_dicom_dict[pred_dicom]
+            img_path = cxr_dicom_dict[pred_dicom]
             img = load_dicom_image(img_path)
-            report = parse_report("C:/data/physionet/physionet.org/files/mimic-cxr/2.1.0/" + cxr_study_dict[key])
+            report = parse_report(cxr_study_dict[key])
 
             if 'findings' in report:
                 seqs = create_sequences(tokenizer, report['findings'], img, max_len, teacher_forcing_prob)
@@ -160,18 +168,27 @@ if __name__ == "__main__":
                     X1.append(feat)
                     X2.append(seq)
                     y.append(word)
+            counted += 1
         except Exception as e:
             print(e)
             skipped += 1
 
             # Convert to numpy arrays
-    X1 = np.array(X1)
-    X2 = np.array(X2)
-    y = np.array(y)
+    #X1 = np.array(X1, dtype=np.float16)
+    #X2 = np.array(X2, dtype=np.float16)
+    #y = np.array(y)
+    X1 = np.stack(X1).astype(np.float16)
+    X2 = np.stack(X2).astype(np.int16)
+    y = np.stack(y).astype(np.float16)
+    print(len(X1))
+    print(len(X2))
+    print(len(y))
 
     # Train epoch
+    gc.collect()
+    tf.keras.backend.clear_session()
     model.fit([X1, X2], y,
-              batch_size=64,
+              batch_size=16,
               epochs=1,
               validation_split=0.1,
               callbacks=[tf.keras.callbacks.EarlyStopping(patience=3, restore_best_weights=True)])
@@ -183,8 +200,3 @@ if __name__ == "__main__":
     # Save final model
     model.save('cnn_rnn_model.h5')
     print("Training complete. Use BeamSearchDecoder for inference.")
-
-# Example inference:
-# decoder = BeamSearchDecoder(model, tokenizer)
-# img = load_dicom_image("path/to/dicom")
-# print(decoder.decode(img))
